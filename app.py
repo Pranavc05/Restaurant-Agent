@@ -35,4 +35,9 @@ def debug():
         "railway_environment": os.environ.get("RAILWAY_ENVIRONMENT"),
         "railway_service_name": os.environ.get("RAILWAY_SERVICE_NAME"),
         "all_env_vars": {k: v for k, v in os.environ.items() if not k.startswith("RAILWAY_")}
-    } 
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port) 
