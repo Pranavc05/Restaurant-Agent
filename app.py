@@ -1,15 +1,23 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-app = FastAPI()
+app = FastAPI(title="Restaurant Agent")
 
 @app.get("/")
-def read_root():
-    return {"Hello": "World"}
+def root():
+    return {"message": "Restaurant Agent API is running!"}
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "message": "All systems operational"}
 
 @app.post("/voice/")
-def voice():
-    return {"message": "Call received"} 
+def handle_call(request: Request):
+    return JSONResponse(content={
+        "message": "Call received successfully",
+        "status": "success"
+    })
+
+@app.get("/test")
+def test():
+    return {"message": "Test endpoint working"} 
