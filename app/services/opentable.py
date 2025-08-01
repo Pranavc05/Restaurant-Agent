@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class OpenTableService:
     def __init__(self):
         # Mock restaurant data
-        self.restaurant_name = "Sample Restaurant"
+        self.restaurant_name = "Bella Vista Italian Restaurant"
         self.business_hours = {
             "monday": {"open": "11:00", "close": "22:00"},
             "tuesday": {"open": "11:00", "close": "22:00"},
