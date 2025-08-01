@@ -11,8 +11,12 @@ from app.models import Base
 from app.routes import voice, analytics, reservations
 from app.config import settings
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (only if database is available)
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created successfully")
+except Exception as e:
+    logger.warning(f"Could not create database tables: {e}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
