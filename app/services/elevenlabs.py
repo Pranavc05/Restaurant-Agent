@@ -1,4 +1,4 @@
-from elevenlabs import generate, save, set_api_key
+import elevenlabs
 from app.config import settings
 import logging
 import tempfile
@@ -7,8 +7,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Configure ElevenLabs
-set_api_key(settings.elevenlabs_api_key)
+# Configure ElevenLabs - API key is set via environment variable
+import os
+os.environ["ELEVEN_API_KEY"] = settings.elevenlabs_api_key
 
 
 class ElevenLabsService:
@@ -25,8 +26,8 @@ class ElevenLabsService:
             if not voice_id:
                 voice_id = self.voice_id
             
-            # Generate audio
-            audio = generate(
+            # Generate audio using the new API
+            audio = elevenlabs.generate(
                 text=text,
                 voice=voice_id,
                 model=self.model_id
@@ -49,14 +50,14 @@ class ElevenLabsService:
                 voice_id = self.voice_id
             
             # Generate and save audio
-            audio = generate(
+            audio = elevenlabs.generate(
                 text=text,
                 voice=voice_id,
                 model=self.model_id
             )
             
             # Save to file
-            save(audio, filename)
+            elevenlabs.save(audio, filename)
             
             return filename
             
@@ -69,8 +70,7 @@ class ElevenLabsService:
         Get list of available voices
         """
         try:
-            from elevenlabs import voices
-            available_voices = voices()
+            available_voices = elevenlabs.voices()
             return [{"id": voice.voice_id, "name": voice.name} for voice in available_voices]
         except Exception as e:
             logger.error(f"Error getting available voices: {e}")

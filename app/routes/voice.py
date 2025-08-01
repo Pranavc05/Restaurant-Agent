@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Request, Response, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
-from twilio.twiml import VoiceResponse
-from twilio.twiml.voice_response import Connect, Stream
+from twilio.twiml.voice_response import VoiceResponse, Connect, Stream
 import logging
 import json
 from datetime import datetime
