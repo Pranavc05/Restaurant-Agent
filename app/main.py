@@ -6,17 +6,30 @@ import logging
 import json
 from typing import Dict, Any
 
-from app.database import get_db, engine
-from app.models import Base
-from app.routes import voice, analytics, reservations
 from app.config import settings
 
-# Create database tables (only if database is available)
+# Import database components conditionally
 try:
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created successfully")
+    from app.database import get_db, engine
+    from app.models import Base
+    from app.routes import voice, analytics, reservations
+    
+    # Create database tables (only if database is available)
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.warning(f"Could not create database tables: {e}")
+        
+    # Include routers
+    app.include_router(voice.router, prefix="/voice", tags=["voice"])
+    app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+    app.include_router(reservations.router, prefix="/reservations", tags=["reservations"])
+    
 except Exception as e:
-    logger.warning(f"Could not create database tables: {e}")
+    logger.error(f"Could not initialize database components: {e}")
+    # Create a minimal app without database features
+    pass
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,11 +50,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Include routers
-app.include_router(voice.router, prefix="/voice", tags=["voice"])
-app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
-app.include_router(reservations.router, prefix="/reservations", tags=["reservations"])
 
 
 @app.get("/")
