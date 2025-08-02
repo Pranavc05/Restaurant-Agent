@@ -18,15 +18,30 @@ def health():
 
 @app.post("/voice/")
 def handle_call(request: Request):
-    return JSONResponse(content={
-        "message": "Call received successfully",
-        "status": "success",
-        "twiml": "<Response><Say>Hello from Restaurant Agent!</Say></Response>"
-    })
+    from fastapi.responses import Response
+    twiml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Hello from Restaurant Agent! Thank you for calling Bella Vista Italian Restaurant. How can I help you today?</Say>
+    <Gather input="speech" action="/voice/process" method="POST" speechTimeout="auto">
+        <Say>Please tell me what you'd like to do. You can say things like "I'd like to make a reservation" or "What are your hours?"</Say>
+    </Gather>
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
 
 @app.get("/test")
 def test():
     return {"message": "Test endpoint working", "timestamp": "now"}
+
+@app.post("/voice/process")
+def process_speech(request: Request):
+    from fastapi.responses import Response
+    # For now, just respond with a simple message
+    twiml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for your input! This is a test response. The full AI agent will be implemented soon.</Say>
+    <Hangup/>
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
 
 @app.get("/debug")
 def debug():
