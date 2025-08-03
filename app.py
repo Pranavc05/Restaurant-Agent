@@ -161,7 +161,7 @@ Respond naturally and conversationally. Keep responses concise but helpful."""
         
     except Exception as e:
         logger.error(f"AI response generation error: {e}")
-        return "I'm sorry, I'm experiencing technical difficulties. Please call back later."
+        return f"I'm sorry, I'm experiencing technical difficulties: {str(e)}. Please call back later."
 
 def text_to_speech(text: str) -> str:
     """Convert text to speech using ElevenLabs"""
@@ -300,7 +300,7 @@ def test_ai():
             "restaurant_name": RESTAURANT_INFO['name']
         }
     except Exception as e:
-        return {"error": str(e), "openai_key": "found" if OPENAI_API_KEY else "missing"}
+        return {"error": str(e), "openai_key": "found" if OPENAI_API_KEY else "missing", "full_error": repr(e)}
 
 @app.get("/debug")
 def debug():
