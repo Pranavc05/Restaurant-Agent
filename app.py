@@ -202,7 +202,7 @@ def health():
     return {"status": "healthy", "message": "All systems operational"}
 
 @app.post("/voice/")
-def handle_call(request: Request):
+async def handle_call(request: Request):
     """Handle incoming call"""
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "unknown")
