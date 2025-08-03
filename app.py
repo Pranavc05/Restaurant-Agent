@@ -281,6 +281,27 @@ async def process_speech(request: Request):
 def test():
     return {"message": "Test endpoint working", "timestamp": "now"}
 
+@app.get("/test-ai")
+def test_ai():
+    """Test the AI agent functionality"""
+    try:
+        # Test OpenAI
+        if not OPENAI_API_KEY:
+            return {"error": "OpenAI API key not found", "openai_key": "missing"}
+        
+        # Test a simple AI response
+        test_response = generate_ai_response("What are your hours?", "test_call")
+        
+        return {
+            "status": "success",
+            "openai_key": "found" if OPENAI_API_KEY else "missing",
+            "elevenlabs_key": "found" if ELEVENLABS_API_KEY else "missing",
+            "test_response": test_response,
+            "restaurant_name": RESTAURANT_INFO['name']
+        }
+    except Exception as e:
+        return {"error": str(e), "openai_key": "found" if OPENAI_API_KEY else "missing"}
+
 @app.get("/debug")
 def debug():
     return {
