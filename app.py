@@ -80,6 +80,9 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine
 from app.models import Call, Transcript, Reservation, ConsentLog, CallAnalytics, Base
 
+# SMS imports
+from app.services.sms import SMSService
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
@@ -136,7 +139,7 @@ def save_transcript(call_id: int, speaker: str, message: str, confidence: float 
     except Exception as e:
         logger.error(f"Error saving transcript: {e}")
 
-def create_reservation(call_id: int, name: str, phone: str, party_size: int, date: str, time: str) -> Reservation:
+def create_reservation(call_id: int, name: str, phone: str, party_size: int, date: str, time: str, sms_consent: bool = False) -> Reservation:
     """Create a new reservation in database"""
     try:
         db = get_db()
@@ -150,15 +153,104 @@ def create_reservation(call_id: int, name: str, phone: str, party_size: int, dat
             party_size=party_size,
             reservation_date=date,
             reservation_time=time,
-            status="confirmed"
+            status="confirmed",
+            sms_consent=sms_consent
         )
         db.add(reservation)
         db.commit()
         db.refresh(reservation)
+        
+        # Send SMS confirmation if consent was given
+        if sms_consent:
+            send_reservation_sms(reservation)
+        
         return reservation
     except Exception as e:
         logger.error(f"Error creating reservation: {e}")
         return None
+
+def send_reservation_sms(reservation: Reservation):
+    """Send SMS confirmation for reservation"""
+    try:
+        sms_service = SMSService()
+        
+        # Format reservation data for SMS
+        reservation_data = {
+            "date": reservation.reservation_date.strftime("%B %d, %Y") if reservation.reservation_date else "N/A",
+            "time": reservation.reservation_time,
+            "party_size": reservation.party_size,
+            "confirmation_number": f"R{reservation.id:06d}"
+        }
+        
+        # Send SMS
+        result = sms_service.send_reservation_confirmation(
+            reservation.customer_phone, 
+            reservation_data
+        )
+        
+        if result["success"]:
+            # Update reservation to mark SMS as sent
+            db = get_db()
+            if db:
+                reservation.sms_sent = True
+                db.commit()
+            logger.info(f"SMS confirmation sent for reservation {reservation.id}")
+        else:
+            logger.error(f"Failed to send SMS confirmation: {result.get('error')}")
+            
+    except Exception as e:
+        logger.error(f"Error sending reservation SMS: {e}")
+
+def extract_reservation_details(conversation_history: list) -> dict:
+    """Extract reservation details from conversation history"""
+    details = {
+        "name": None,
+        "phone": None,
+        "party_size": None,
+        "date": None,
+        "time": None,
+        "sms_consent": False
+    }
+    
+    # Look for patterns in the conversation
+    for msg in conversation_history:
+        if msg["role"] == "user":
+            text = msg["content"].lower()
+            
+            # Extract name and phone
+            if "my name is" in text:
+                details["name"] = text.split("my name is")[-1].strip().title()
+            elif "name is" in text:
+                details["name"] = text.split("name is")[-1].strip().title()
+            
+            # Extract phone number
+            if any(char.isdigit() for char in text):
+                # Simple phone extraction (you might want to improve this)
+                import re
+                phone_match = re.search(r'\d{3}[-.]?\d{3}[-.]?\d{4}', text)
+                if phone_match:
+                    details["phone"] = phone_match.group()
+            
+            # Extract party size
+            if any(word in text for word in ["people", "person", "party"]):
+                import re
+                size_match = re.search(r'(\d+)\s*(?:people|person|party)', text)
+                if size_match:
+                    details["party_size"] = int(size_match.group(1))
+            
+            # Extract date and time
+            if any(word in text for word in ["tomorrow", "today", "friday", "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday"]):
+                details["date"] = text
+            
+            if any(word in text for word in ["am", "pm", "o'clock"]):
+                details["time"] = text
+            
+            # Check for SMS consent
+            if any(word in text for word in ["yes", "sure", "okay", "ok", "text", "sms"]):
+                if "reservation" in text or "confirmation" in text:
+                    details["sms_consent"] = True
+    
+    return details
 
 def transcribe_audio(audio_url: str) -> str:
     """Transcribe audio using OpenAI Whisper"""
@@ -215,6 +307,7 @@ IMPORTANT CONVERSATION RULES:
   * First: Ask for name and phone number
   * Second: Ask for party size
   * Third: Ask for date and time
+  * Fourth: Ask for SMS consent for confirmation
 - Be formal and professional in tone
 - Only offer additional help when the current request is fully completed.
 - Be conversational and natural - don't sound robotic or repetitive.
@@ -223,6 +316,12 @@ RESERVATION FLOW EXAMPLES:
 - When someone says "I'd like to make a reservation": "I'd be happy to help you make a reservation. To get started, could you please provide your name and phone number?"
 - After getting name/phone: "Thank you. How many people will be in your party?"
 - After getting party size: "Perfect. What date and time would you prefer for your reservation?"
+- After getting date/time: "Excellent! Would you like me to send you a text message confirmation of your reservation?"
+
+SMS CONSENT:
+- Always ask for SMS consent after collecting all reservation details
+- If customer says yes: "Perfect! I'll send you a confirmation text. Your reservation is confirmed for [date] at [time] for [party_size] people. Thank you for choosing [restaurant_name]!"
+- If customer says no: "No problem! Your reservation is confirmed for [date] at [time] for [party_size] people. Thank you for choosing [restaurant_name]!"
 
 Current conversation context: {len(history)} previous exchanges.
 
@@ -366,6 +465,30 @@ async def process_speech(request: Request):
     if call_record:
         save_transcript(call_record.id, "ai", ai_response)
     
+    # Check if reservation is complete and create it
+    if call_record and "reservation" in speech_result.lower():
+        history = call_history.get(call_sid, [])
+        reservation_details = extract_reservation_details(history)
+        
+        # If we have all the details, create the reservation
+        if (reservation_details["name"] and reservation_details["phone"] and 
+            reservation_details["party_size"] and reservation_details["date"] and 
+            reservation_details["time"]):
+            
+            # Create reservation in database
+            reservation = create_reservation(
+                call_id=call_record.id,
+                name=reservation_details["name"],
+                phone=reservation_details["phone"],
+                party_size=reservation_details["party_size"],
+                date=reservation_details["date"],
+                time=reservation_details["time"],
+                sms_consent=reservation_details["sms_consent"]
+            )
+            
+            if reservation:
+                logger.info(f"Reservation created: {reservation.id}")
+    
     # Convert to speech (for now, using Twilio TTS)
     speech_text = text_to_speech(ai_response)
     
@@ -471,10 +594,39 @@ def get_reservations():
                     "reservation_date": reservation.reservation_date,
                     "reservation_time": reservation.reservation_time,
                     "status": reservation.status,
+                    "sms_consent": reservation.sms_consent,
+                    "sms_sent": reservation.sms_sent,
                     "created_at": reservation.created_at
                 }
                 for reservation in reservations
             ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/test-sms")
+def test_sms():
+    """Test SMS functionality"""
+    try:
+        sms_service = SMSService()
+        
+        # Test data
+        test_reservation = {
+            "date": "December 25, 2024",
+            "time": "7:00 PM",
+            "party_size": 4,
+            "confirmation_number": "R000001"
+        }
+        
+        # You'll need to replace this with a real phone number for testing
+        test_phone = "+1234567890"  # Replace with your phone number
+        
+        result = sms_service.send_reservation_confirmation(test_phone, test_reservation)
+        
+        return {
+            "status": "SMS test completed",
+            "result": result,
+            "note": "Replace test_phone with your actual number to receive SMS"
         }
     except Exception as e:
         return {"error": str(e)}
