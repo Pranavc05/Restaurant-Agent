@@ -128,6 +128,12 @@ Your capabilities:
 6. Ask for SMS consent before sending confirmations
 7. Escalate to human if customer requests or if you're unsure after 2 attempts
 
+IMPORTANT CONVERSATION RULES:
+- Stay focused on the current task. Do NOT ask "Is there anything else I can help you with" unless the customer has completed their request.
+- If collecting reservation details, ask for the next piece of information needed.
+- Only offer additional help when the current request is fully completed.
+- Be conversational and natural - don't sound robotic or repetitive.
+
 Current conversation context: {len(history)} previous exchanges.
 
 Respond naturally and conversationally. Keep responses concise but helpful."""
@@ -173,7 +179,7 @@ def text_to_speech(text: str) -> str:
         # Generate audio using ElevenLabs
         audio = elevenlabs.generate(
             text=text,
-            voice="Josh",  # You can change this to any ElevenLabs voice
+            voice="Rachel",  # Natural-sounding female voice in 20s
             model="eleven_monolingual_v1"
         )
         
