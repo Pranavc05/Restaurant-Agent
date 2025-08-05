@@ -75,10 +75,90 @@ RESTAURANT_INFO = {
     """
 }
 
-# Mock reservation system
+# Database imports
+from sqlalchemy.orm import Session
+from app.database import SessionLocal, engine
+from app.models import Call, Transcript, Reservation, ConsentLog, CallAnalytics, Base
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+# Mock reservation system (fallback)
 reservations = []
 call_history = {}
 reservation_state = {}  # Track reservation progress per call
+
+def get_db():
+    """Get database session"""
+    db = SessionLocal()
+    try:
+        return db
+    except Exception as e:
+        logger.error(f"Database connection error: {e}")
+        return None
+
+def create_call_record(call_sid: str, from_number: str, to_number: str) -> Call:
+    """Create a new call record in database"""
+    try:
+        db = get_db()
+        if not db:
+            return None
+            
+        call = Call(
+            call_sid=call_sid,
+            from_number=from_number,
+            to_number=to_number,
+            status="in-progress"
+        )
+        db.add(call)
+        db.commit()
+        db.refresh(call)
+        return call
+    except Exception as e:
+        logger.error(f"Error creating call record: {e}")
+        return None
+
+def save_transcript(call_id: int, speaker: str, message: str, confidence: float = None):
+    """Save transcript to database"""
+    try:
+        db = get_db()
+        if not db:
+            return
+            
+        transcript = Transcript(
+            call_id=call_id,
+            speaker=speaker,
+            message=message,
+            confidence=confidence
+        )
+        db.add(transcript)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error saving transcript: {e}")
+
+def create_reservation(call_id: int, name: str, phone: str, party_size: int, date: str, time: str) -> Reservation:
+    """Create a new reservation in database"""
+    try:
+        db = get_db()
+        if not db:
+            return None
+            
+        reservation = Reservation(
+            call_id=call_id,
+            customer_name=name,
+            customer_phone=phone,
+            party_size=party_size,
+            reservation_date=date,
+            reservation_time=time,
+            status="confirmed"
+        )
+        db.add(reservation)
+        db.commit()
+        db.refresh(reservation)
+        return reservation
+    except Exception as e:
+        logger.error(f"Error creating reservation: {e}")
+        return None
 
 def transcribe_audio(audio_url: str) -> str:
     """Transcribe audio using OpenAI Whisper"""
@@ -222,8 +302,13 @@ async def handle_call(request: Request):
     """Handle incoming call"""
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "unknown")
+    from_number = form_data.get("From", "unknown")
+    to_number = form_data.get("To", "unknown")
     
-    logger.info(f"New call received: {call_sid}")
+    logger.info(f"New call received: {call_sid} from {from_number}")
+    
+    # Create call record in database
+    call_record = create_call_record(call_sid, from_number, to_number)
     
     # Initialize call history
     if call_sid not in call_history:
@@ -251,6 +336,16 @@ async def process_speech(request: Request):
     
     logger.info(f"Processing speech for call {call_sid}: '{speech_result}' (confidence: {confidence})")
     
+    # Get call record from database
+    db = get_db()
+    call_record = None
+    if db:
+        call_record = db.query(Call).filter(Call.call_sid == call_sid).first()
+    
+    # Save customer speech to database
+    if call_record:
+        save_transcript(call_record.id, "customer", speech_result, float(confidence))
+    
     # If no speech detected or low confidence, ask for clarification
     if not speech_result or float(confidence) < 0.5:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -266,6 +361,10 @@ async def process_speech(request: Request):
     
     # Generate AI response
     ai_response = generate_ai_response(speech_result, call_sid)
+    
+    # Save AI response to database
+    if call_record:
+        save_transcript(call_record.id, "ai", ai_response)
     
     # Convert to speech (for now, using Twilio TTS)
     speech_text = text_to_speech(ai_response)
@@ -328,6 +427,57 @@ def debug():
         "elevenlabs_key_set": bool(ELEVENLABS_API_KEY),
         "all_env_vars": {k: v for k, v in os.environ.items() if not k.startswith("RAILWAY_")}
     }
+
+@app.get("/data/calls")
+def get_calls():
+    """Get all calls from database"""
+    try:
+        db = get_db()
+        if not db:
+            return {"error": "Database not available"}
+        
+        calls = db.query(Call).order_by(Call.start_time.desc()).limit(10).all()
+        return {
+            "calls": [
+                {
+                    "id": call.id,
+                    "call_sid": call.call_sid,
+                    "from_number": call.from_number,
+                    "start_time": call.start_time,
+                    "status": call.status
+                }
+                for call in calls
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/data/reservations")
+def get_reservations():
+    """Get all reservations from database"""
+    try:
+        db = get_db()
+        if not db:
+            return {"error": "Database not available"}
+        
+        reservations = db.query(Reservation).order_by(Reservation.created_at.desc()).limit(10).all()
+        return {
+            "reservations": [
+                {
+                    "id": reservation.id,
+                    "customer_name": reservation.customer_name,
+                    "customer_phone": reservation.customer_phone,
+                    "party_size": reservation.party_size,
+                    "reservation_date": reservation.reservation_date,
+                    "reservation_time": reservation.reservation_time,
+                    "status": reservation.status,
+                    "created_at": reservation.created_at
+                }
+                for reservation in reservations
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
