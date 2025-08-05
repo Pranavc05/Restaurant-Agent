@@ -78,6 +78,7 @@ RESTAURANT_INFO = {
 # Mock reservation system
 reservations = []
 call_history = {}
+reservation_state = {}  # Track reservation progress per call
 
 def transcribe_audio(audio_url: str) -> str:
     """Transcribe audio using OpenAI Whisper"""
@@ -120,7 +121,7 @@ Special Features:
 {RESTAURANT_INFO['features']}
 
 Your capabilities:
-1. Make reservations (collect: name, phone, party size, date, time)
+1. Make reservations (collect details step by step: name & phone first, then party size, then date & time)
 2. Answer questions about hours, menu, location, special features
 3. Provide excellent service - be friendly and professional
 4. Handle reservation changes and cancellations
@@ -130,9 +131,18 @@ Your capabilities:
 
 IMPORTANT CONVERSATION RULES:
 - Stay focused on the current task. Do NOT ask "Is there anything else I can help you with" unless the customer has completed their request.
-- If collecting reservation details, ask for the next piece of information needed.
+- For reservations, collect information step by step:
+  * First: Ask for name and phone number
+  * Second: Ask for party size
+  * Third: Ask for date and time
+- Be formal and professional in tone
 - Only offer additional help when the current request is fully completed.
 - Be conversational and natural - don't sound robotic or repetitive.
+
+RESERVATION FLOW EXAMPLES:
+- When someone says "I'd like to make a reservation": "I'd be happy to help you make a reservation. To get started, could you please provide your name and phone number?"
+- After getting name/phone: "Thank you. How many people will be in your party?"
+- After getting party size: "Perfect. What date and time would you prefer for your reservation?"
 
 Current conversation context: {len(history)} previous exchanges.
 
