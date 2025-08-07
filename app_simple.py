@@ -4,6 +4,7 @@ import os
 import json
 import logging
 from typing import Optional
+from pydantic import BaseModel
 import openai
 from elevenlabs import generate, save
 import elevenlabs
@@ -347,6 +348,10 @@ def sms_status():
         "twilio_client_ready": bool(client is not None),
         "from_number": TWILIO_PHONE_NUMBER if client else None
     }
+
+class SMSRequest(BaseModel):
+    to: str
+    message: Optional[str] = None
 
 @app.get("/test-ai")
 def test_ai():
