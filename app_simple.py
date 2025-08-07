@@ -105,6 +105,7 @@ RESTAURANT_INFO = {
 reservations = []
 call_history = {}
 reservation_state = {}  # Track reservation progress per call
+last_analysis = {}
 
 def transcribe_audio(audio_url: str) -> str:
     """Transcribe audio using OpenAI Whisper"""
@@ -210,6 +211,60 @@ Respond naturally and conversationally. Keep responses concise but helpful."""
         logger.error(f"Error generating AI response: {e}")
         return "I'm sorry, I'm experiencing technical difficulties. Please call back later."
 
+def analyze_interaction(user_message: str, ai_message: str) -> dict:
+    """Lightweight analyzer using OpenAI to extract intent, reservation completion, and SMS consent.
+
+    Returns dict like:
+    {
+      "reservation_complete": bool,
+      "sms_consent": "yes"|"no"|"unknown",
+      "details": {"name": str|None, "phone": str|None, "party_size": int|None, "date": str|None, "time": str|None}
+    }
+    """
+    try:
+        if not OPENAI_API_KEY:
+            return {"reservation_complete": False, "sms_consent": "unknown", "details": {}}
+
+        system = (
+            "You extract structured data from a restaurant phone conversation. "
+            "Return strict JSON only."
+        )
+        instruction = (
+            "Given the last user message and the assistant reply, decide if a reservation is completed, "
+            "and whether the caller consented to SMS. "
+            "Output JSON with keys: reservation_complete (boolean), sms_consent ('yes'|'no'|'unknown'), "
+            "and details {name, phone, party_size, date, time}. If unknown, use null."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": instruction},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {"user_message": user_message, "assistant_message": ai_message}
+                ),
+            },
+        ]
+        resp = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0,
+            max_tokens=200,
+        )
+        raw = resp.choices[0].message.content.strip()
+        # Ensure pure JSON
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1:
+            raw = raw[start : end + 1]
+        parsed = json.loads(raw)
+        # Basic shape guard
+        if "reservation_complete" not in parsed or "sms_consent" not in parsed:
+            raise ValueError("missing keys")
+        return parsed
+    except Exception as exc:
+        logger.warning(f"analyze_interaction fallback: {exc}")
+        return {"reservation_complete": False, "sms_consent": "unknown", "details": {}}
 def text_to_speech(text: str) -> str:
     """Convert text to speech using ElevenLabs"""
     try:
@@ -302,6 +357,10 @@ async def process_speech(request: Request):
     
     # Generate AI response
     ai_response = generate_ai_response(speech_result, call_sid)
+
+    # Analyze exchange for reservation completion and consent
+    analysis = analyze_interaction(speech_result, ai_response)
+    last_analysis[call_sid] = analysis
     
     # Convert to speech (for now, using Twilio TTS)
     speech_text = text_to_speech(ai_response)
@@ -328,6 +387,11 @@ async def process_speech(request: Request):
 </Response>"""
     
     return Response(content=twiml, media_type="application/xml")
+
+@app.get("/analysis/{call_sid}")
+def get_last_analysis(call_sid: str):
+    """Return the most recent analyzer output for a call (for validation)."""
+    return last_analysis.get(call_sid, {})
 
 @app.get("/test")
 def test():
