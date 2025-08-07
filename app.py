@@ -80,11 +80,22 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine
 from app.models import Call, Transcript, Reservation, ConsentLog, CallAnalytics, Base
 
-# SMS imports
-from app.services.sms import SMSService
+# SMS imports (with fallback)
+try:
+    from app.services.sms import SMSService
+    SMS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"SMS service not available: {e}")
+    SMS_AVAILABLE = False
+    SMSService = None
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (with error handling)
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created successfully")
+except Exception as e:
+    logger.warning(f"Could not create database tables: {e}")
+    logger.info("Continuing without database - some features may be limited")
 
 # Mock reservation system (fallback)
 reservations = []
@@ -93,8 +104,8 @@ reservation_state = {}  # Track reservation progress per call
 
 def get_db():
     """Get database session"""
-    db = SessionLocal()
     try:
+        db = SessionLocal()
         return db
     except Exception as e:
         logger.error(f"Database connection error: {e}")
@@ -171,6 +182,10 @@ def create_reservation(call_id: int, name: str, phone: str, party_size: int, dat
 
 def send_reservation_sms(reservation: Reservation):
     """Send SMS confirmation for reservation"""
+    if not SMS_AVAILABLE:
+        logger.warning("SMS service not available - skipping SMS confirmation")
+        return
+        
     try:
         sms_service = SMSService()
         
@@ -607,6 +622,13 @@ def get_reservations():
 @app.get("/test-sms")
 def test_sms():
     """Test SMS functionality"""
+    if not SMS_AVAILABLE:
+        return {
+            "status": "SMS service not available",
+            "error": "SMS service could not be imported",
+            "note": "Check that all required dependencies are installed"
+        }
+    
     try:
         sms_service = SMSService()
         
