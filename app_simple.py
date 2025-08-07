@@ -19,6 +19,11 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 RESTAURANT_NAME = os.environ.get("RESTAURANT_NAME", "Bella Vista Italian Restaurant")
 
+# Twilio (optional; used for SMS)
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
+
 # Configure OpenAI
 if OPENAI_API_KEY:
     openai.api_key = OPENAI_API_KEY
@@ -335,6 +340,7 @@ def debug():
     return {
         "openai_key_set": bool(OPENAI_API_KEY),
         "elevenlabs_key_set": bool(ELEVENLABS_API_KEY),
+        "twilio_ready": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER),
         "restaurant_name": RESTAURANT_INFO['name'],
         "call_history_count": len(call_history),
         "reservations_count": len(reservations)
