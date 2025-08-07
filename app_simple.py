@@ -353,6 +353,36 @@ class SMSRequest(BaseModel):
     to: str
     message: Optional[str] = None
 
+@app.post("/sms/send")
+def sms_send(payload: SMSRequest):
+    """Send an SMS if Twilio is properly configured; otherwise return 503.
+
+    This is intentionally minimal and safe: no send unless env/imports are ready.
+    """
+    client = get_twilio_client()
+    if client is None:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "SMS subsystem not ready",
+                "twilio_import": _twilio_import_ok,
+                "twilio_env_ready": bool(
+                    TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER
+                ),
+            },
+        )
+
+    text = payload.message or f"Hello from {RESTAURANT_INFO['name']}!"
+    try:
+        msg = client.messages.create(
+            from_=TWILIO_PHONE_NUMBER,
+            to=payload.to,
+            body=text,
+        )
+        return {"status": "queued", "sid": msg.sid}
+    except Exception as exc:
+        return JSONResponse(status_code=502, content={"error": str(exc)})
+
 @app.get("/test-ai")
 def test_ai():
     """Test AI functionality"""
