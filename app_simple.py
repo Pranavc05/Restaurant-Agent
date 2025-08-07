@@ -24,6 +24,26 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
 
+# Guarded Twilio import
+try:
+    from twilio.rest import Client as TwilioClient
+    _twilio_import_ok = True
+except Exception:
+    TwilioClient = None
+    _twilio_import_ok = False
+
+
+def get_twilio_client():
+    """Return a Twilio client if env vars and import are available, else None."""
+    if not _twilio_import_ok:
+        return None
+    if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER):
+        return None
+    try:
+        return TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    except Exception:
+        return None
+
 # Configure OpenAI
 if OPENAI_API_KEY:
     openai.api_key = OPENAI_API_KEY
@@ -315,6 +335,17 @@ def test():
         "message": "API is working!",
         "restaurant": RESTAURANT_INFO['name'],
         "status": "operational"
+    }
+
+@app.get("/sms/status")
+def sms_status():
+    """Check whether SMS subsystem is ready (no send)."""
+    client = get_twilio_client()
+    return {
+        "twilio_import": _twilio_import_ok,
+        "twilio_env_ready": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER),
+        "twilio_client_ready": bool(client is not None),
+        "from_number": TWILIO_PHONE_NUMBER if client else None
     }
 
 @app.get("/test-ai")
