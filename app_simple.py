@@ -3,11 +3,26 @@ from fastapi.responses import Response, JSONResponse
 import os
 import json
 import logging
-from typing import Optional
+import re
+import time
+from typing import Optional, Dict, List
+from collections import defaultdict
 from pydantic import BaseModel
 import openai
 from elevenlabs import generate, save
 import elevenlabs
+
+# Database imports
+try:
+    from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text, Float, ForeignKey
+    from sqlalchemy.ext.declarative import declarative_base
+    from sqlalchemy.orm import sessionmaker, relationship
+    from sqlalchemy.sql import func
+    import psycopg2
+    DATABASE_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Database dependencies not available: {e}")
+    DATABASE_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +40,11 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
 
+# Database configuration
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 # Guarded Twilio import
 try:
     from twilio.rest import Client as TwilioClient
@@ -32,6 +52,92 @@ try:
 except Exception:
     TwilioClient = None
     _twilio_import_ok = False
+
+# Database setup
+engine = None
+SessionLocal = None
+Base = None
+
+if DATABASE_AVAILABLE and DATABASE_URL:
+    try:
+        Base = declarative_base()
+        engine = create_engine(DATABASE_URL)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        logger.info("Database connection established")
+    except Exception as e:
+        logger.warning(f"Database connection failed: {e}")
+        DATABASE_AVAILABLE = False
+else:
+    logger.info("Database not configured - using in-memory storage")
+
+# Database models (only if database is available)
+if DATABASE_AVAILABLE and Base is not None:
+    class Call(Base):
+        __tablename__ = "calls"
+        
+        id = Column(Integer, primary_key=True, index=True)
+        call_sid = Column(String, unique=True, index=True)
+        from_number = Column(String, index=True)
+        to_number = Column(String)
+        start_time = Column(DateTime(timezone=True), server_default=func.now())
+        end_time = Column(DateTime(timezone=True), nullable=True)
+        duration = Column(Float, nullable=True)
+        escalated = Column(Boolean, default=False)
+        status = Column(String, default="in-progress")
+        
+        # Relationships
+        transcripts = relationship("Transcript", back_populates="call")
+        reservations = relationship("Reservation", back_populates="call")
+
+    class Transcript(Base):
+        __tablename__ = "transcripts"
+        
+        id = Column(Integer, primary_key=True, index=True)
+        call_id = Column(Integer, ForeignKey("calls.id"))
+        timestamp = Column(DateTime(timezone=True), server_default=func.now())
+        speaker = Column(String)  # "customer" or "ai"
+        message = Column(Text)
+        confidence = Column(Float, nullable=True)
+        
+        # Relationships
+        call = relationship("Call", back_populates="transcripts")
+
+    class Reservation(Base):
+        __tablename__ = "reservations"
+        
+        id = Column(Integer, primary_key=True, index=True)
+        call_id = Column(Integer, ForeignKey("calls.id"))
+        customer_name = Column(String)
+        customer_phone = Column(String, index=True)
+        party_size = Column(Integer)
+        reservation_date = Column(DateTime(timezone=True))
+        reservation_time = Column(String)
+        status = Column(String, default="confirmed")
+        sms_consent = Column(Boolean, default=False)
+        sms_sent = Column(Boolean, default=False)
+        created_at = Column(DateTime(timezone=True), server_default=func.now())
+        
+        # Relationships
+        call = relationship("Call", back_populates="reservations")
+
+    # Create tables
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.warning(f"Could not create database tables: {e}")
+        DATABASE_AVAILABLE = False
+
+# Database session helper
+def get_db():
+    if not DATABASE_AVAILABLE or not SessionLocal:
+        return None
+    db = SessionLocal()
+    try:
+        return db
+    except Exception:
+        db.close()
+        return None
 
 
 def get_twilio_client():
@@ -105,7 +211,213 @@ RESTAURANT_INFO = {
 reservations = []
 call_history = {}
 reservation_state = {}  # Track reservation progress per call
+
+# Security and spam protection
+call_rate_limit = defaultdict(list)  # Track calls per phone number
+blocked_numbers = set()  # Blocked phone numbers
+moderation_flags = defaultdict(int)  # Track inappropriate content per number
+
+# Content moderation keywords
+INAPPROPRIATE_KEYWORDS = {
+    'profanity': ['fuck', 'shit', 'damn', 'bitch', 'asshole', 'bastard'],
+    'spam_indicators': ['test', 'testing', 'spam', 'fake', 'bot', 'automated'],
+    'malicious': ['hack', 'attack', 'virus', 'scam', 'fraud'],
+    'inappropriate_names': ['hitler', 'satan', 'devil', 'nazi']
+}
+
+# Rate limiting settings
+MAX_CALLS_PER_HOUR = 5
+MAX_MODERATION_FLAGS = 3
+RESERVATION_COOLDOWN = 300  # 5 minutes between reservations from same number
 last_analysis = {}
+
+def is_rate_limited(phone_number: str) -> bool:
+    """Check if phone number is rate limited"""
+    if phone_number in blocked_numbers:
+        return True
+    
+    current_time = time.time()
+    # Clean old calls (older than 1 hour)
+    call_rate_limit[phone_number] = [
+        call_time for call_time in call_rate_limit[phone_number] 
+        if current_time - call_time < 3600
+    ]
+    
+    # Check if exceeded rate limit
+    if len(call_rate_limit[phone_number]) >= MAX_CALLS_PER_HOUR:
+        logger.warning(f"Rate limit exceeded for {phone_number}")
+        return True
+    
+    # Add current call
+    call_rate_limit[phone_number].append(current_time)
+    return False
+
+def moderate_content(text: str, phone_number: str) -> tuple[bool, str]:
+    """
+    Moderate content for inappropriate language and spam
+    Returns (is_safe, reason_if_blocked)
+    """
+    text_lower = text.lower()
+    
+    # Check for inappropriate keywords
+    for category, keywords in INAPPROPRIATE_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in text_lower:
+                moderation_flags[phone_number] += 1
+                logger.warning(f"Inappropriate content detected from {phone_number}: {category} - {keyword}")
+                
+                # Block after repeated violations
+                if moderation_flags[phone_number] >= MAX_MODERATION_FLAGS:
+                    blocked_numbers.add(phone_number)
+                    logger.error(f"Phone number {phone_number} blocked for repeated violations")
+                    return False, "account_blocked"
+                
+                return False, category
+    
+    # Check for repeated identical messages (spam detection)
+    if phone_number in call_history:
+        recent_messages = [
+            msg['content'] for msg in call_history[phone_number][-5:] 
+            if msg['role'] == 'user'
+        ]
+        if len(recent_messages) >= 3 and len(set(recent_messages)) <= 1:
+            moderation_flags[phone_number] += 1
+            logger.warning(f"Spam detected from {phone_number}: repeated messages")
+            return False, "spam_detected"
+    
+    return True, ""
+
+def validate_reservation_data(data: dict, phone_number: str) -> tuple[bool, str]:
+    """
+    Validate reservation data for suspicious patterns
+    Returns (is_valid, reason_if_invalid)
+    """
+    # Check for inappropriate names
+    if 'name' in data:
+        name_lower = data['name'].lower()
+        for keyword in INAPPROPRIATE_KEYWORDS['inappropriate_names']:
+            if keyword in name_lower:
+                logger.warning(f"Inappropriate name detected: {data['name']}")
+                return False, "inappropriate_name"
+    
+    # Check reservation cooldown
+    current_time = time.time()
+    if phone_number in reservation_state:
+        last_reservation = reservation_state[phone_number].get('last_reservation_time', 0)
+        if current_time - last_reservation < RESERVATION_COOLDOWN:
+            logger.warning(f"Reservation cooldown active for {phone_number}")
+            return False, "too_frequent"
+    
+    return True, ""
+
+def log_call_start(call_sid: str, from_number: str, to_number: str):
+    """Log call start to database"""
+    if not DATABASE_AVAILABLE:
+        return
+    
+    db = get_db()
+    if not db:
+        return
+    
+    try:
+        # Check if call already exists
+        existing_call = db.query(Call).filter(Call.call_sid == call_sid).first()
+        if not existing_call:
+            call = Call(
+                call_sid=call_sid,
+                from_number=from_number,
+                to_number=to_number,
+                status="in-progress"
+            )
+            db.add(call)
+            db.commit()
+            logger.info(f"Call {call_sid} logged to database")
+    except Exception as e:
+        logger.error(f"Failed to log call start: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+def log_transcript(call_sid: str, speaker: str, message: str, confidence: float = None):
+    """Log transcript to database"""
+    if not DATABASE_AVAILABLE:
+        return
+    
+    db = get_db()
+    if not db:
+        return
+    
+    try:
+        # Find the call
+        call = db.query(Call).filter(Call.call_sid == call_sid).first()
+        if call:
+            transcript = Transcript(
+                call_id=call.id,
+                speaker=speaker,
+                message=message,
+                confidence=confidence
+            )
+            db.add(transcript)
+            db.commit()
+            logger.info(f"Transcript logged for call {call_sid}")
+    except Exception as e:
+        logger.error(f"Failed to log transcript: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+def log_reservation(call_sid: str, reservation_data: dict):
+    """Log reservation to database"""
+    if not DATABASE_AVAILABLE:
+        return
+    
+    db = get_db()
+    if not db:
+        return
+    
+    try:
+        # Find the call
+        call = db.query(Call).filter(Call.call_sid == call_sid).first()
+        if call:
+            reservation = Reservation(
+                call_id=call.id,
+                customer_name=reservation_data.get('name'),
+                customer_phone=reservation_data.get('phone'),
+                party_size=reservation_data.get('party_size'),
+                reservation_time=reservation_data.get('time'),
+                status="confirmed",
+                sms_consent=reservation_data.get('sms_consent', False)
+            )
+            db.add(reservation)
+            db.commit()
+            logger.info(f"Reservation logged for call {call_sid}")
+    except Exception as e:
+        logger.error(f"Failed to log reservation: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+def log_call_end(call_sid: str):
+    """Log call end to database"""
+    if not DATABASE_AVAILABLE:
+        return
+    
+    db = get_db()
+    if not db:
+        return
+    
+    try:
+        call = db.query(Call).filter(Call.call_sid == call_sid).first()
+        if call:
+            call.status = "completed"
+            call.end_time = func.now()
+            db.commit()
+            logger.info(f"Call {call_sid} marked as completed")
+    except Exception as e:
+        logger.error(f"Failed to log call end: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 def transcribe_audio(audio_url: str) -> str:
     """Transcribe audio using OpenAI Whisper"""
@@ -313,9 +625,22 @@ async def handle_call(request: Request):
     call_sid = form_data.get("CallSid", "unknown")
     from_number = form_data.get("From", "unknown")
     to_number = form_data.get("To", "unknown")
-    
+
     logger.info(f"New call received: {call_sid} from {from_number}")
-    
+
+    # Log call start to database
+    log_call_start(call_sid, from_number, to_number)
+
+    # Security check: Rate limiting
+    if is_rate_limited(from_number):
+        logger.warning(f"Call blocked due to rate limiting: {from_number}")
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>I'm sorry, but you have exceeded the maximum number of calls allowed. Please try again later.</Say>
+    <Hangup/>
+</Response>"""
+        return Response(content=twiml, media_type="application/xml")
+
     # Initialize call history
     if call_sid not in call_history:
         call_history[call_sid] = []
@@ -337,10 +662,36 @@ async def process_speech(request: Request):
     """Process user speech and generate AI response"""
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "unknown")
+    from_number = form_data.get("From", "unknown")
     speech_result = form_data.get("SpeechResult", "")
     confidence = form_data.get("Confidence", "0")
     
     logger.info(f"Processing speech for call {call_sid}: '{speech_result}' (confidence: {confidence})")
+
+    # Log user transcript
+    log_transcript(call_sid, "customer", speech_result, float(confidence) if confidence else None)
+
+    # Content moderation check
+    is_safe, block_reason = moderate_content(speech_result, from_number)
+    if not is_safe:
+        logger.warning(f"Content blocked for {from_number}: {block_reason}")
+        
+        if block_reason == "account_blocked":
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>I'm sorry, but this number has been blocked due to repeated policy violations. Goodbye.</Say>
+    <Hangup/>
+</Response>"""
+        else:
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>I'm sorry, but I can't process that request. Please keep our conversation professional and appropriate.</Say>
+    <Gather input="speech" action="/voice/process" method="POST" speechTimeout="auto" speechModel="phone_call">
+        <Say>How else can I help you today?</Say>
+    </Gather>
+    <Hangup/>
+</Response>"""
+        return Response(content=twiml, media_type="application/xml")
     
     # If no speech detected or low confidence, ask for clarification
     if not speech_result or float(confidence) < 0.5:
@@ -358,6 +709,9 @@ async def process_speech(request: Request):
     # Generate AI response
     ai_response = generate_ai_response(speech_result, call_sid)
 
+    # Log AI response
+    log_transcript(call_sid, "ai", ai_response)
+
     # Analyze exchange for reservation completion and consent
     analysis = analyze_interaction(speech_result, ai_response)
     last_analysis[call_sid] = analysis
@@ -366,9 +720,40 @@ async def process_speech(request: Request):
     speech_text = text_to_speech(ai_response)
     
     # Check if this is a reservation completion
-    if "reservation" in speech_result.lower() and any(word in ai_response.lower() for word in ["confirmed", "booked", "reserved"]):
-        # End call after reservation confirmation
-        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    if analysis.get("reservation_complete", False):
+        # Validate reservation data
+        reservation_data = analysis.get("details", {})
+        is_valid, validation_error = validate_reservation_data(reservation_data, from_number)
+        
+        if not is_valid:
+            logger.warning(f"Reservation validation failed for {from_number}: {validation_error}")
+            
+            if validation_error == "inappropriate_name":
+                error_msg = "I'm sorry, but I cannot process a reservation with that name. Please provide a different name."
+            elif validation_error == "too_frequent":
+                error_msg = "I notice you just made a reservation recently. Please wait a few minutes before making another reservation."
+            else:
+                error_msg = "I'm sorry, but I cannot process this reservation at the moment. Please try again later."
+            
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>{error_msg}</Say>
+    <Gather input="speech" action="/voice/process" method="POST" speechTimeout="auto" speechModel="phone_call">
+        <Say>How else can I help you today?</Say>
+    </Gather>
+    <Hangup/>
+</Response>"""
+        else:
+            # Mark reservation time for cooldown
+            if from_number not in reservation_state:
+                reservation_state[from_number] = {}
+            reservation_state[from_number]['last_reservation_time'] = time.time()
+            
+            # Log reservation to database
+            log_reservation(call_sid, reservation_data)
+            
+            # End call after successful reservation confirmation
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>{speech_text}</Say>
     <Say>Thank you for choosing {RESTAURANT_INFO['name']}. Have a great day!</Say>
@@ -464,16 +849,200 @@ def test_ai():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/security/status")
+def security_status():
+    """Get security monitoring dashboard"""
+    return {
+        "blocked_numbers": list(blocked_numbers),
+        "total_blocked": len(blocked_numbers),
+        "rate_limited_numbers": len([
+            phone for phone, calls in call_rate_limit.items() 
+            if len(calls) >= MAX_CALLS_PER_HOUR
+        ]),
+        "moderation_flags": dict(moderation_flags),
+        "settings": {
+            "max_calls_per_hour": MAX_CALLS_PER_HOUR,
+            "max_moderation_flags": MAX_MODERATION_FLAGS,
+            "reservation_cooldown_seconds": RESERVATION_COOLDOWN
+        }
+    }
+
+@app.post("/security/unblock")
+async def unblock_number(request: Request):
+    """Unblock a phone number (admin function)"""
+    data = await request.json()
+    phone_number = data.get("phone_number")
+    
+    if not phone_number:
+        return {"error": "phone_number required"}
+    
+    if phone_number in blocked_numbers:
+        blocked_numbers.remove(phone_number)
+        moderation_flags[phone_number] = 0
+        logger.info(f"Unblocked phone number: {phone_number}")
+        return {"message": f"Phone number {phone_number} has been unblocked"}
+    else:
+        return {"message": f"Phone number {phone_number} was not blocked"}
+
+@app.get("/analytics/dashboard")
+def analytics_dashboard():
+    """Get analytics dashboard with call and reservation statistics"""
+    if not DATABASE_AVAILABLE:
+        return {
+            "database_status": "not_available",
+            "in_memory_stats": {
+                "call_history_count": len(call_history),
+                "reservations_count": len(reservations)
+            }
+        }
+    
+    db = get_db()
+    if not db:
+        return {"error": "Database connection failed"}
+    
+    try:
+        # Call statistics
+        total_calls = db.query(Call).count()
+        completed_calls = db.query(Call).filter(Call.status == "completed").count()
+        in_progress_calls = db.query(Call).filter(Call.status == "in-progress").count()
+        
+        # Reservation statistics
+        total_reservations = db.query(Reservation).count()
+        confirmed_reservations = db.query(Reservation).filter(Reservation.status == "confirmed").count()
+        
+        # SMS consent statistics
+        sms_consent_given = db.query(Reservation).filter(Reservation.sms_consent == True).count()
+        
+        return {
+            "database_status": "available",
+            "call_stats": {
+                "total_calls": total_calls,
+                "completed_calls": completed_calls,
+                "in_progress_calls": in_progress_calls,
+                "completion_rate": (completed_calls / total_calls * 100) if total_calls > 0 else 0
+            },
+            "reservation_stats": {
+                "total_reservations": total_reservations,
+                "confirmed_reservations": confirmed_reservations,
+                "sms_consent_rate": (sms_consent_given / total_reservations * 100) if total_reservations > 0 else 0
+            },
+            "conversion_rate": (total_reservations / total_calls * 100) if total_calls > 0 else 0
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+@app.get("/analytics/calls")
+def get_calls(limit: int = 50):
+    """Get recent calls with transcripts"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available"}
+    
+    db = get_db()
+    if not db:
+        return {"error": "Database connection failed"}
+    
+    try:
+        calls = db.query(Call).order_by(Call.start_time.desc()).limit(limit).all()
+        result = []
+        
+        for call in calls:
+            call_data = {
+                "call_sid": call.call_sid,
+                "from_number": call.from_number,
+                "start_time": call.start_time.isoformat() if call.start_time else None,
+                "end_time": call.end_time.isoformat() if call.end_time else None,
+                "status": call.status,
+                "transcript_count": len(call.transcripts),
+                "reservation_count": len(call.reservations)
+            }
+            result.append(call_data)
+        
+        return {"calls": result}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+@app.get("/analytics/call/{call_sid}")
+def get_call_details(call_sid: str):
+    """Get detailed call information including full transcript"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available"}
+    
+    db = get_db()
+    if not db:
+        return {"error": "Database connection failed"}
+    
+    try:
+        call = db.query(Call).filter(Call.call_sid == call_sid).first()
+        if not call:
+            return {"error": "Call not found"}
+        
+        # Get transcripts
+        transcripts = [
+            {
+                "timestamp": t.timestamp.isoformat(),
+                "speaker": t.speaker,
+                "message": t.message,
+                "confidence": t.confidence
+            }
+            for t in call.transcripts
+        ]
+        
+        # Get reservations
+        reservations = [
+            {
+                "customer_name": r.customer_name,
+                "customer_phone": r.customer_phone,
+                "party_size": r.party_size,
+                "reservation_time": r.reservation_time,
+                "status": r.status,
+                "sms_consent": r.sms_consent,
+                "sms_sent": r.sms_sent,
+                "created_at": r.created_at.isoformat()
+            }
+            for r in call.reservations
+        ]
+        
+        return {
+            "call": {
+                "call_sid": call.call_sid,
+                "from_number": call.from_number,
+                "to_number": call.to_number,
+                "start_time": call.start_time.isoformat() if call.start_time else None,
+                "end_time": call.end_time.isoformat() if call.end_time else None,
+                "status": call.status
+            },
+            "transcripts": transcripts,
+            "reservations": reservations
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        db.close()
+
 @app.get("/debug")
 def debug():
     """Debug endpoint to check environment"""
+    db_status = "not_configured"
+    if DATABASE_URL:
+        db_status = "available" if DATABASE_AVAILABLE else "failed"
+    
     return {
         "openai_key_set": bool(OPENAI_API_KEY),
         "elevenlabs_key_set": bool(ELEVENLABS_API_KEY),
         "twilio_ready": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER),
+        "database_status": db_status,
+        "database_url_set": bool(DATABASE_URL),
         "restaurant_name": RESTAURANT_INFO['name'],
         "call_history_count": len(call_history),
-        "reservations_count": len(reservations)
+        "reservations_count": len(reservations),
+        "security_stats": {
+            "blocked_numbers": len(blocked_numbers),
+            "moderation_flags": len(moderation_flags)
+        }
     }
 
 if __name__ == "__main__":
