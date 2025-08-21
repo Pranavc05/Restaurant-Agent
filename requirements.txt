@@ -1,12 +1,19 @@
-fastapi==0.104.1
+# Core FastAPI dependencies
+fastapi==0.116.1
 uvicorn==0.24.0
 python-multipart==0.0.6
-twilio==8.10.0
-openai==0.28.1
-elevenlabs==0.2.26
+
+# AI and Voice Services  
+openai==1.70.0
+elevenlabs==2.8.1
+
+# Communication
+twilio==9.7.0
+
+# Database (PostgreSQL)
 psycopg2-binary==2.9.7
 sqlalchemy==2.0.23
-alembic==1.12.1
+
+# Configuration
 python-dotenv==1.0.0
 pydantic==2.5.0
-requests==2.31.0 

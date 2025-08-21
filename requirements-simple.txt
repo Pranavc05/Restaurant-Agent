@@ -1,8 +1,0 @@
-fastapi
-uvicorn
-twilio
-openai
-elevenlabs
-python-dotenv
-websockets
-httpx 
