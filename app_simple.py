@@ -128,6 +128,140 @@ if DATABASE_AVAILABLE and Base is not None:
         logger.warning(f"Could not create database tables: {e}")
         DATABASE_AVAILABLE = False
 
+# Language detection function
+def detect_language(text):
+    """
+    Detect language from customer input using keyword patterns and OpenAI
+    """
+    text_lower = text.lower()
+    
+    # Quick pattern-based detection for common languages
+    for lang_code, patterns in LANGUAGE_PATTERNS.items():
+        matches = sum(1 for pattern in patterns if pattern in text_lower)
+        if matches >= 1:  # If we find at least one keyword match
+            return lang_code
+    
+    # Fallback to OpenAI language detection for more complex cases
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a language detection system. Respond with only the ISO 639-1 language code (2 letters) for the detected language. If unsure, respond with 'en'."
+                },
+                {
+                    "role": "user", 
+                    "content": f"Detect the language of this text: '{text}'"
+                }
+            ],
+            max_tokens=10,
+            temperature=0
+        )
+        detected_lang = response.choices[0].message.content.strip().lower()
+        
+        # Validate that it's a supported language
+        if detected_lang in SUPPORTED_LANGUAGES:
+            return detected_lang
+        
+    except Exception as e:
+        logger.warning(f"Language detection failed: {e}")
+    
+    # Default to English if detection fails
+    return 'en'
+
+def get_language_specific_voice(language_code):
+    """
+    Get the appropriate voice for the detected language
+    """
+    return SUPPORTED_LANGUAGES.get(language_code, SUPPORTED_LANGUAGES['en'])['voice']
+
+def create_multilingual_system_prompt(language_code):
+    """
+    Create a system prompt in the appropriate language with restaurant knowledge
+    """
+    lang_info = SUPPORTED_LANGUAGES.get(language_code, SUPPORTED_LANGUAGES['en'])
+    lang_name = lang_info['name']
+    
+    # Base prompt with restaurant knowledge
+    if language_code == 'es':
+        system_prompt = f"""Eres un asistente de IA profesional para {RESTAURANT_INFO['name']}. Responde SIEMPRE en español de manera natural y amigable.
+
+INFORMACIÓN DEL RESTAURANTE:
+- Nombre: {RESTAURANT_INFO['name']}
+- Dirección: {RESTAURANT_INFO['address']}
+
+CONOCIMIENTO DEL MENÚ:
+Conoces todos los platos del menú incluyendo ingredientes, alérgenos, y preparación.
+
+INFORMACIÓN LOCAL:
+- Estacionamiento disponible en Main Street
+- Transporte público cerca
+- Atracciones cercanas en el centro
+
+REGLAS IMPORTANTES:
+1. Siempre responde en español
+2. Sé específico sobre ingredientes y alérgenos
+3. Ofrece alternativas si algo no está disponible
+4. Si necesitas consultar con el chef, di "Déjame consultar con el chef"
+5. Para reservas, pregunta: nombre, teléfono, número de personas, fecha, hora
+"""
+    elif language_code == 'fr':
+        system_prompt = f"""Vous êtes un assistant IA professionnel pour {RESTAURANT_INFO['name']}. Répondez TOUJOURS en français de manière naturelle et amicale.
+
+INFORMATIONS DU RESTAURANT:
+- Nom: {RESTAURANT_INFO['name']}
+- Adresse: {RESTAURANT_INFO['address']}
+
+CONNAISSANCE DU MENU:
+Vous connaissez tous les plats du menu, leurs ingrédients, allergènes et préparation.
+
+INFORMATIONS LOCALES:
+- Parking disponible sur Main Street
+- Transports publics à proximité
+- Attractions du centre-ville
+
+RÈGLES IMPORTANTES:
+1. Toujours répondre en français
+2. Être précis sur les ingrédients et allergènes
+3. Proposer des alternatives si nécessaire
+4. Si consultation chef nécessaire, dire "Laissez-moi consulter le chef"
+5. Pour réservations, demander: nom, téléphone, nombre de personnes, date, heure
+"""
+    else:
+        # Default English prompt with enhanced restaurant knowledge
+        system_prompt = f"""You are a professional AI assistant for {RESTAURANT_INFO['name']}. You have extensive knowledge about our restaurant and provide helpful, accurate information.
+
+RESTAURANT INFORMATION:
+- Name: {RESTAURANT_INFO['name']}
+- Address: {RESTAURANT_INFO['address']}
+
+DETAILED MENU KNOWLEDGE:
+You know every dish on our menu including ingredients, allergens, preparation methods, and possible modifications.
+
+LOCAL AREA EXPERTISE:
+- Parking available on Main Street (2-hour limit) and nearby lots
+- Public transportation accessible via metro and bus lines
+- Walking distance to downtown attractions and hotels
+
+IMPORTANT CONVERSATION RULES:
+1. Always respond in {lang_name}
+2. Be specific about ingredients and allergens when asked
+3. Offer alternatives if something isn't available
+4. If you need to check with kitchen staff, say "Let me check with the chef about that"
+5. For reservations, collect: name, phone, party size, date, time
+6. Be warm and welcoming, as if you're a knowledgeable staff member
+
+RESERVATION FLOW:
+- Ask for name and phone number first
+- Then ask for party size, date, and time
+- Confirm availability (use realistic responses)
+- Offer alternatives if requested time isn't available
+- Ask about special occasions or dietary needs
+"""
+    
+    return system_prompt
+
 # Database session helper
 def get_db():
     if not DATABASE_AVAILABLE or not SessionLocal:
@@ -159,12 +293,163 @@ if OPENAI_API_KEY:
 if ELEVENLABS_API_KEY:
     os.environ["ELEVEN_API_KEY"] = ELEVENLABS_API_KEY
 
-# Restaurant information for AI context
+# Language detection and multilingual support
+SUPPORTED_LANGUAGES = {
+    'en': {'name': 'English', 'voice': 'Rachel', 'code': 'en-US'},
+    'es': {'name': 'Spanish', 'voice': 'Isabella', 'code': 'es-ES'},
+    'fr': {'name': 'French', 'voice': 'Charlotte', 'code': 'fr-FR'},
+    'de': {'name': 'German', 'voice': 'Giselle', 'code': 'de-DE'},
+    'it': {'name': 'Italian', 'voice': 'Giulia', 'code': 'it-IT'},
+    'pt': {'name': 'Portuguese', 'voice': 'Camila', 'code': 'pt-BR'},
+    'ru': {'name': 'Russian', 'voice': 'Anastasia', 'code': 'ru-RU'},
+    'ja': {'name': 'Japanese', 'voice': 'Yuki', 'code': 'ja-JP'},
+    'ko': {'name': 'Korean', 'voice': 'Jihyun', 'code': 'ko-KR'},
+    'zh': {'name': 'Chinese', 'voice': 'Li Wei', 'code': 'zh-CN'},
+    'hi': {'name': 'Hindi', 'voice': 'Aditi', 'code': 'hi-IN'},
+    'ar': {'name': 'Arabic', 'voice': 'Amara', 'code': 'ar-SA'},
+}
+
+# Language detection patterns
+LANGUAGE_PATTERNS = {
+    'es': ['hola', 'buenos', 'gracias', 'por favor', 'disculpe', 'reserva', 'mesa'],
+    'fr': ['bonjour', 'merci', 'excusez', 'réservation', 'table', 'restaurant'],
+    'de': ['hallo', 'danke', 'entschuldigung', 'reservierung', 'tisch', 'restaurant'],
+    'it': ['ciao', 'grazie', 'scusi', 'prenotazione', 'tavolo', 'ristorante'],
+    'pt': ['olá', 'obrigado', 'desculpe', 'reserva', 'mesa', 'restaurante'],
+    'ru': ['привет', 'спасибо', 'извините', 'бронирование', 'столик'],
+    'ja': ['こんにちは', 'ありがとう', 'すみません', '予約', 'テーブル'],
+    'ko': ['안녕하세요', '감사합니다', '죄송합니다', '예약', '테이블'],
+    'zh': ['你好', '谢谢', '对不起', '预订', '桌子'],
+    'hi': ['नमस्ते', 'धन्यवाद', 'माफ करें', 'बुकिंग', 'टेबल'],
+    'ar': ['مرحبا', 'شكرا', 'عذرا', 'حجز', 'طاولة']
+}
+
+# Enhanced restaurant information for AI context
 RESTAURANT_INFO = {
     "name": "Bella Vista Italian Restaurant",
     "address": "123 Main Street, Downtown, CA 90210",
     "phone": "(555) 123-4567",
     "website": "www.bellavista.com",
+    
+    # Detailed menu information with allergens and preparations
+    "menu": {
+        "appetizers": {
+            "bruschetta": {
+                "name": "Classic Bruschetta",
+                "price": "$12",
+                "description": "Grilled bread topped with fresh tomatoes, basil, garlic, and extra virgin olive oil",
+                "allergens": ["gluten"],
+                "vegetarian": True,
+                "preparation_time": "5-8 minutes",
+                "ingredients": ["bread", "tomatoes", "basil", "garlic", "olive oil", "balsamic vinegar"]
+            },
+            "calamari": {
+                "name": "Fried Calamari",
+                "price": "$16",
+                "description": "Fresh squid rings lightly breaded and fried, served with marinara sauce",
+                "allergens": ["seafood", "gluten"],
+                "vegetarian": False,
+                "preparation_time": "8-10 minutes",
+                "ingredients": ["squid", "flour", "eggs", "breadcrumbs", "marinara sauce"]
+            }
+        },
+        "pasta": {
+            "spaghetti_carbonara": {
+                "name": "Spaghetti Carbonara",
+                "price": "$18",
+                "description": "Traditional Roman pasta with eggs, pecorino cheese, pancetta, and black pepper",
+                "allergens": ["gluten", "dairy", "eggs"],
+                "vegetarian": False,
+                "preparation_time": "12-15 minutes",
+                "ingredients": ["spaghetti", "eggs", "pecorino cheese", "pancetta", "black pepper"],
+                "modifications": ["can substitute pancetta with vegetables for vegetarian version"]
+            },
+            "penne_arrabbiata": {
+                "name": "Penne Arrabbiata",
+                "price": "$16",
+                "description": "Penne pasta in spicy tomato sauce with garlic, red chili, and fresh herbs",
+                "allergens": ["gluten"],
+                "vegetarian": True,
+                "spicy": True,
+                "preparation_time": "10-12 minutes",
+                "ingredients": ["penne pasta", "tomatoes", "garlic", "red chili", "herbs", "olive oil"]
+            }
+        },
+        "main_courses": {
+            "osso_buco": {
+                "name": "Osso Buco alla Milanese",
+                "price": "$32",
+                "description": "Braised veal shanks with vegetables, white wine, and saffron risotto",
+                "allergens": ["dairy"],
+                "vegetarian": False,
+                "preparation_time": "25-30 minutes",
+                "ingredients": ["veal shanks", "carrots", "celery", "onions", "white wine", "arborio rice", "saffron"],
+                "chef_special": True
+            },
+            "branzino": {
+                "name": "Mediterranean Branzino",
+                "price": "$28",
+                "description": "Whole grilled sea bass with lemon, herbs, and seasonal vegetables",
+                "allergens": ["fish"],
+                "vegetarian": False,
+                "preparation_time": "20-25 minutes",
+                "ingredients": ["sea bass", "lemon", "herbs", "seasonal vegetables", "olive oil"],
+                "gluten_free": True
+            }
+        },
+        "desserts": {
+            "tiramisu": {
+                "name": "Classic Tiramisu",
+                "price": "$9",
+                "description": "Traditional Italian dessert with coffee-soaked ladyfingers and mascarpone",
+                "allergens": ["dairy", "eggs", "gluten"],
+                "vegetarian": True,
+                "preparation_time": "made fresh daily",
+                "ingredients": ["ladyfingers", "espresso", "mascarpone", "eggs", "cocoa powder"]
+            }
+        }
+    },
+    
+    # Local area information
+    "local_info": {
+        "parking": {
+            "street_parking": "Available on Main Street (2-hour limit until 6 PM)",
+            "valet": "Complimentary valet service available evenings after 5 PM",
+            "nearby_lots": ["City Parking Garage (2 blocks east)", "Plaza Parking Structure (3 blocks north)"],
+            "cost": "Street parking $2/hour, lots $5-8/hour"
+        },
+        "public_transport": {
+            "metro": "Red Line Metro station 3 blocks away (Downtown/Civic Center)",
+            "bus": "Bus lines 4, 16, 20 stop directly in front",
+            "rideshare": "Designated pickup zone on side street (1st Avenue)"
+        },
+        "nearby_attractions": [
+            "Downtown Art Museum (2 blocks)",
+            "Historic Theater District (4 blocks)",
+            "Waterfront Park (6 blocks)",
+            "Shopping Plaza (3 blocks)"
+        ],
+        "area_description": "Located in the heart of downtown's dining district, walking distance to major hotels and attractions"
+    },
+    
+    # Seasonal and special information
+    "seasonal_info": {
+        "current_specials": [
+            "Winter Truffle Menu (available through March)",
+            "Happy Hour 4-6 PM weekdays (50% off appetizers)",
+            "Sunday Brunch 10 AM - 3 PM"
+        ],
+        "holiday_hours": {
+            "christmas": "Closed December 25th",
+            "new_year": "Special NYE menu December 31st",
+            "thanksgiving": "Closed November 4th Thursday"
+        },
+        "events": {
+            "wine_tastings": "First Friday of each month at 7 PM",
+            "cooking_classes": "Saturday mornings 10 AM (advance booking required)",
+            "live_music": "Thursday and Friday evenings 7-10 PM"
+        }
+    },
     "hours": {
         "monday": "11:00 AM - 10:00 PM",
         "tuesday": "11:00 AM - 10:00 PM", 
@@ -210,6 +495,7 @@ RESTAURANT_INFO = {
 # Mock reservation system (fallback)
 reservations = []
 call_history = {}
+call_languages = {}  # Store detected language for each call
 reservation_state = {}  # Track reservation progress per call
 
 # Security and spam protection
@@ -433,10 +719,18 @@ def transcribe_audio(audio_url: str) -> str:
         return "I'm sorry, I couldn't understand that. Could you please repeat?"
 
 def generate_ai_response(user_message: str, call_sid: str) -> str:
-    """Generate AI response using OpenAI GPT"""
+    """Generate multilingual AI response using OpenAI GPT with language detection"""
     try:
         if not OPENAI_API_KEY:
             return "I'm sorry, I'm experiencing technical difficulties. Please call back later."
+        
+        # Detect language from user input
+        detected_language = detect_language(user_message)
+        logger.info(f"Detected language: {detected_language} for message: {user_message}")
+        
+        # Store language preference for this call
+        if call_sid not in call_languages:
+            call_languages[call_sid] = detected_language
         
         # Get conversation history
         history = call_history.get(call_sid, [])
@@ -448,7 +742,8 @@ def generate_ai_response(user_message: str, call_sid: str) -> str:
         if len(history) > 10:
             history = history[-10:]
         
-        system_prompt = f"""You are an AI assistant for {RESTAURANT_INFO['name']}. You are friendly, professional, and helpful.
+        # Create language-specific system prompt
+        system_prompt = create_multilingual_system_prompt(detected_language)
 
 Restaurant Information:
 - Name: {RESTAURANT_INFO['name']}
