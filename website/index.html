@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoSlate - AI Restaurant Agent | Multilingual Phone Automation</title>
+    <meta name="description" content="Advanced AI phone agent for restaurants with instant multilingual support, fraud protection, and real-time analytics. Never miss a call again.">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <h2>AutoSlate</h2>
+                <span class="nav-tagline">AI Restaurant Agent</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#demo">Live Demo</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#contact">Contact</a>
+                <button class="cta-button">Try Free Demo</button>
+            </div>
+            <div class="mobile-menu-toggle">
+                <i data-lucide="menu"></i>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-text">
+                <h1>The World's Most Advanced <span class="gradient-text">AI Restaurant Agent</span></h1>
+                <p class="hero-subtitle">
+                    Handle unlimited calls in any language. Zero wait times, bulletproof security, 
+                    and intelligence that learns your restaurant's unique voice.
+                </p>
+                <div class="hero-stats">
+                    <div class="stat">
+                        <span class="stat-number">50+</span>
+                        <span class="stat-label">Languages Supported</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">99.9%</span>
+                        <span class="stat-label">Uptime Guarantee</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">24/7</span>
+                        <span class="stat-label">Always Available</span>
+                    </div>
+                </div>
+                <div class="hero-actions">
+                    <button class="primary-button" onclick="startDemo()">
+                        <i data-lucide="phone"></i>
+                        Call Live Demo Now
+                    </button>
+                    <button class="secondary-button">
+                        <i data-lucide="play"></i>
+                        Watch Demo
+                    </button>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="phone-mockup">
+                    <div class="phone-screen">
+                        <div class="call-interface">
+                            <div class="call-header">
+                                <span class="call-status">Live Call</span>
+                                <span class="call-duration">2:34</span>
+                            </div>
+                            <div class="caller-info">
+                                <div class="caller-avatar">
+                                    <i data-lucide="user"></i>
+                                </div>
+                                <div class="caller-details">
+                                    <h4>Maria Rodriguez</h4>
+                                    <p>Speaking Spanish</p>
+                                </div>
+                            </div>
+                            <div class="language-indicator">
+                                <span class="language-badge">ES</span>
+                                <span>Auto-detected Spanish</span>
+                            </div>
+                            <div class="call-transcript">
+                                <div class="message customer">
+                                    "Hola, ¿puedo hacer una reserva?"
+                                </div>
+                                <div class="message ai">
+                                    "¡Por supuesto! Estaré encantado de ayudarte..."
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Unique Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2>What Makes AutoSlate <span class="highlight">Unbeatable</span></h2>
+                <p>While others handle calls, we transform customer experiences</p>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card featured">
+                    <div class="feature-icon">
+                        <i data-lucide="globe"></i>
+                    </div>
+                    <h3>Instant Language Detection</h3>
+                    <p>Our AI recognizes and responds in 50+ languages within seconds. No setup required.</p>
+                    <div class="feature-demo">
+                        <div class="language-examples">
+                            <span class="lang-tag">🇪🇸 Español</span>
+                            <span class="lang-tag">🇫🇷 Français</span>
+                            <span class="lang-tag">🇯🇵 日本語</span>
+                            <span class="lang-tag">🇩🇪 Deutsch</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i data-lucide="shield-check"></i>
+                    </div>
+                    <h3>Fraud-Proof Security</h3>
+                    <p>Advanced spam detection blocks fake reservations and prank calls automatically.</p>
+                    <div class="security-stats">
+                        <div class="security-metric">
+                            <span class="metric-value">0</span>
+                            <span class="metric-label">Spam Calls Today</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i data-lucide="brain"></i>
+                    </div>
+                    <h3>Contextual Memory</h3>
+                    <p>Remembers customer preferences and past conversations for personalized service.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i data-lucide="zap"></i>
+                    </div>
+                    <h3>Sub-Second Response</h3>
+                    <p>Lightning-fast AI responses that feel more natural than human conversation.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i data-lucide="chart-line"></i>
+                    </div>
+                    <h3>Predictive Analytics</h3>
+                    <p>Real-time insights into customer behavior and revenue optimization opportunities.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i data-lucide="mic"></i>
+                    </div>
+                    <h3>Voice Cloning</h3>
+                    <p>Use your restaurant owner's actual voice for authentic, branded interactions.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Demo Section -->
+    <section class="demo-section" id="demo">
+        <div class="container">
+            <div class="demo-content">
+                <div class="demo-text">
+                    <h2>Experience AutoSlate <span class="highlight">Live</span></h2>
+                    <p>Call our live demo restaurant and experience the future of restaurant automation.</p>
+                    <div class="demo-features">
+                        <div class="demo-feature">
+                            <i data-lucide="check"></i>
+                            <span>Try making a reservation in any language</span>
+                        </div>
+                        <div class="demo-feature">
+                            <i data-lucide="check"></i>
+                            <span>Ask about menu items and specials</span>
+                        </div>
+                        <div class="demo-feature">
+                            <i data-lucide="check"></i>
+                            <span>Test our security with inappropriate requests</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="demo-phone">
+                    <div class="phone-number-display">
+                        <h3>Call Now: <span class="phone-number">+1 (989) 402-9906</span></h3>
+                        <p>Available 24/7 - Try it in your language!</p>
+                    </div>
+                    <div class="demo-metrics">
+                        <div class="metric">
+                            <span class="metric-number" id="demo-calls">1,247</span>
+                            <span class="metric-label">Demo Calls Today</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-number">23</span>
+                            <span class="metric-label">Languages Used</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison Section -->
+    <section class="comparison">
+        <div class="container">
+            <h2>Why Choose AutoSlate Over Competitors?</h2>
+            <div class="comparison-table">
+                <div class="comparison-header">
+                    <div class="feature-name">Feature</div>
+                    <div class="competitor">Other Solutions</div>
+                    <div class="autoslate">AutoSlate</div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name">Language Support</div>
+                    <div class="competitor">
+                        <i data-lucide="x" class="icon-red"></i>
+                        1-2 languages
+                    </div>
+                    <div class="autoslate">
+                        <i data-lucide="check" class="icon-green"></i>
+                        50+ languages, auto-detect
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name">Fraud Protection</div>
+                    <div class="competitor">
+                        <i data-lucide="minus" class="icon-yellow"></i>
+                        Basic filtering
+                    </div>
+                    <div class="autoslate">
+                        <i data-lucide="check" class="icon-green"></i>
+                        Advanced AI security
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name">Setup Time</div>
+                    <div class="competitor">
+                        <i data-lucide="clock" class="icon-yellow"></i>
+                        2-4 weeks
+                    </div>
+                    <div class="autoslate">
+                        <i data-lucide="zap" class="icon-green"></i>
+                        15 minutes
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name">Voice Quality</div>
+                    <div class="competitor">
+                        <i data-lucide="minus" class="icon-yellow"></i>
+                        Robotic TTS
+                    </div>
+                    <div class="autoslate">
+                        <i data-lucide="check" class="icon-green"></i>
+                        Human-like, cloneable
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section class="pricing" id="pricing">
+        <div class="container">
+            <h2>Simple, Transparent Pricing</h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3>Starter</h3>
+                    <div class="price">$99<span>/month</span></div>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> Up to 500 calls/month</li>
+                        <li><i data-lucide="check"></i> Basic multilingual support</li>
+                        <li><i data-lucide="check"></i> Standard voice quality</li>
+                        <li><i data-lucide="check"></i> Email support</li>
+                    </ul>
+                    <button class="pricing-button">Start Free Trial</button>
+                </div>
+                
+                <div class="pricing-card featured">
+                    <div class="popular-badge">Most Popular</div>
+                    <h3>Professional</h3>
+                    <div class="price">$299<span>/month</span></div>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> Unlimited calls</li>
+                        <li><i data-lucide="check"></i> 50+ languages auto-detect</li>
+                        <li><i data-lucide="check"></i> Voice cloning</li>
+                        <li><i data-lucide="check"></i> Advanced analytics</li>
+                        <li><i data-lucide="check"></i> Priority support</li>
+                    </ul>
+                    <button class="pricing-button primary">Start Free Trial</button>
+                </div>
+                
+                <div class="pricing-card">
+                    <h3>Enterprise</h3>
+                    <div class="price">Custom</div>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> Multi-location support</li>
+                        <li><i data-lucide="check"></i> Custom integrations</li>
+                        <li><i data-lucide="check"></i> Dedicated support</li>
+                        <li><i data-lucide="check"></i> Custom voice training</li>
+                        <li><i data-lucide="check"></i> SLA guarantees</li>
+                    </ul>
+                    <button class="pricing-button">Contact Sales</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="container">
+            <div class="cta-content">
+                <h2>Ready to Transform Your Restaurant?</h2>
+                <p>Join the revolution. Never miss another call, never lose another customer.</p>
+                <div class="cta-buttons">
+                    <button class="primary-button large" onclick="startDemo()">
+                        <i data-lucide="phone"></i>
+                        Call Live Demo
+                    </button>
+                    <button class="secondary-button large">
+                        <i data-lucide="calendar"></i>
+                        Schedule Consultation
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>AutoSlate</h3>
+                    <p>The future of restaurant communication, available today.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="#demo">Live Demo</a>
+                    <a href="#pricing">Pricing</a>
+                </div>
+                <div class="footer-section">
+                    <h4>Support</h4>
+                    <a href="#contact">Contact</a>
+                    <a href="#">Documentation</a>
+                    <a href="#">Help Center</a>
+                </div>
+                <div class="footer-section">
+                    <h4>Company</h4>
+                    <a href="#">About</a>
+                    <a href="#">Blog</a>
+                    <a href="#">Careers</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 AutoSlate. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
