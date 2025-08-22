@@ -906,11 +906,13 @@ def root():
 @app.get("/health")
 def health():
     """Health check endpoint - Railway uses this to verify the app is running"""
+    import datetime
     return {
         "status": "healthy",
-        "timestamp": "2024-12-25T00:00:00Z",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "version": "1.0.0",
-        "message": "All systems operational"
+        "message": "All systems operational",
+        "uptime": "ok"
     }
 
 @app.post("/voice/")
